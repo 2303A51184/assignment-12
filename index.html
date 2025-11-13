@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FoodFinder — Restaurant / Dish Explorer</title>
+  <style>
+    :root{--bg:#f7f7fb;--card:#ffffff;--accent:#ff6b6b;--muted:#6b7280}
+    *{box-sizing:border-box}
+    body{
+        margin:0;
+        font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;
+        background:var(--bg);
+        color:#0f172a;
+        
+        /* --- BACKGROUND IMAGE --- */
+        background-image: url('https://www.toptal.com/designers/subtlepatterns/uploads/food.png');
+        background-repeat: repeat;
+    }
+    header{background:linear-gradient(90deg, #fff 0%, #f0f4ff 100%);padding:18px 20px;border-bottom:1px solid #e6e9f2;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    h1{margin:0;font-size:20px}
+    .controls{display:flex;gap:10px;align-items:center;margin-left:auto}
+    .controls select,.controls input{padding:8px 10px;border-radius:8px;border:1px solid #dde3f0;background:white}
+    .btn{background:var(--accent);color:white;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+    .btn.selected{background:var(--muted)}
+    #locationBtn{padding: 8px; font-size: 14px; line-height: 1; border: 1px solid #dde3f0; background: white; color: var(--muted); border-radius: 8px; cursor: pointer;}
+    .ingredients{font-style:italic; font-size: 12px; color: #334155; padding-top: 4px; border-top: 1px solid #f1f5f9; margin-top: 8px;}
+    
+    main{padding:18px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+    .card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,0.06);display:flex;flex-direction:column;gap:8px}
+    .thumb{width:100%;aspect-ratio:16/10;border-radius:8px;object-fit:cover}
+    .meta{display:flex;justify-content:space-between;align-items:center}
+    .title{font-weight:600;font-size:15px}
+    .small{font-size:13px;color:var(--muted)}
+    .rating{display:inline-flex;gap:6px;align-items:center}
+    .fav{background:transparent;border:0;cursor:pointer;font-size:18px}
+    .top-row{display:flex;gap:10px;align-items:center}
+    .tabs{display:flex;gap:8px}
+    .tab{padding:6px 10px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+    .tab.active{background:white;border-color:#e6e9f2}
+    /* --- REMOVED FOOTER STYLE, NO LONGER NEEDED --- */
+    .empty{padding:24px;background:white;border-radius:12px;text-align:center;color:var(--muted)}
+    
+    /* --- STYLE FOR THE IMAGE --- */
+    .empty img {
+        max-width: 250px;
+        width: 100%;
+        border-radius: 12px;
+        margin-bottom: 15px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    
+    @media (max-width:520px){.controls{width:100%;flex-direction:column;align-items:stretch}}
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:center;gap:12px">
+      <img src="https://icon.kitchen/icon/f/food-takeout-box.svg?color=ff6b6b" width="36" height="36" alt="Food icon">
+      <div>
+        <h1>FoodFinder</h1>
+        <div class="small">Search dishes by cuisine or category — favorite what you like</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="tabs" role="tablist">
+        <button class="tab active" id="tab-explore">Explore</button>
+        <button class="tab" id="tab-favs">Favorites</button>
+        <button class="tab" id="tab-cart">Cart</button>
+      </div>
+
+      <select id="areaSelect" title="Cuisine (Area)">
+        <option value="">Loading cuisines...</option>
+      </select>
+
+      <select id="categorySelect" title="Category">
+        <option value="">All categories</option>
+      </select>
+      
+      <div style="display:flex; gap: 4px;">
+        <input id="cityInput" placeholder="City (optional)" style="flex: 1;" />
+        <button id="locationBtn" title="Use My Location">📍</button>
+      </div>
+      <button class="btn" id="searchBtn">Search</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="resultsArea"></div>
+  </main>
+
+  <template id="cardT">
+    <div class="card">
+      <img class="thumb" alt="meal image">
+      <div class="meta">
+        <div>
+          <div class="title"></div>
+          <div class="small sub"></div>
+        </div>
+        <div style="text-align:right">
+          <div class="rating"></div>
+          <button class="fav" title="Favorite">♡</button>
+        </div>
+      </div>
+      <div class="small addr"></div>
+      <div class="small ingredients"></div>
+      
+      <a href="#" class="btn btn-map" target="_blank" 
+         style="width:100%; margin-top:4px; background-color: #4285F4; text-decoration: none; text-align: center; display: none;">
+         Find on Map
+      </a>
+      
+      <button class="btn btn-select" style="width:100%; margin-top:8px;">Select</button>
+    </div>
+  </template>
+
+  <script>
+    // --- Helper / state ---
+    const apiBase = 'https://www.themealdb.com/api/json/v1/1';
+    const areaSelect = document.getElementById('areaSelect');
+    const categorySelect = document.getElementById('categorySelect');
+    const cityInput = document.getElementById('cityInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const resultsArea = document.getElementById('resultsArea');
+    const cardT = document.getElementById('cardT');
+    const tabExplore = document.getElementById('tab-explore');
+    const tabFavs = document.getElementById('tab-favs');
+    const tabCart = document.getElementById('tab-cart');
+    const locationBtn = document.getElementById('locationBtn');
+
+    let currentView = 'explore';
+
+    function setActiveTab(name){
+      currentView = name;
+      tabExplore.classList.toggle('active', name==='explore');
+      tabFavs.classList.toggle('active', name==='favs');
+      tabCart.classList.toggle('active', name==='cart');
+      render();
+    }
+
+    tabExplore.addEventListener('click', ()=> setActiveTab('explore'));
+    tabFavs.addEventListener('click', ()=> setActiveTab('favs'));
+    tabCart.addEventListener('click', ()=> setActiveTab('cart'));
+
+    // --- Favorites Helpers ---
+    function getFavorites(){
+      try { return JSON.parse(localStorage.getItem('ff_favs')||'[]'); } catch(e){return []}
+    }
+    function saveFavorites(arr){ localStorage.setItem('ff_favs', JSON.stringify(arr)); }
+    function isFav(id){ return getFavorites().some(m=>m.idMeal===id); }
+
+    // --- Cart Helpers ---
+    function getCart(){
+      try { return JSON.parse(localStorage.getItem('ff_cart')||'[]'); } catch(e){return []}
+    }
+    function saveCart(arr){ localStorage.setItem('ff_cart', JSON.stringify(arr)); }
+    function isInCart(id){ return getCart().some(m=>m.idMeal===id); }
+
+
+    // --- API helpers ---
+    async function fetchJSON(url){
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('Network error');
+      return res.json();
+    }
+
+    async function loadAreas(){
+      const data = await fetchJSON(`${apiBase}/list.php?a=list`);
+      return data.meals.map(m => m.strArea).sort();
+    }
+    async function loadCategories(){
+      const data = await fetchJSON(`${apiBase}/list.php?c=list`);
+      return data.meals.map(m => m.strCategory).sort();
+    }
+
+    async function filterByArea(area){
+      if(!area) return [];
+      const data = await fetchJSON(`${apiBase}/filter.php?a=${encodeURIComponent(area)}`);
+      return data.meals || [];
+    }
+    async function filterByCategory(cat){
+      if(!cat) return [];
+      const data = await fetchJSON(`${apiBase}/filter.php?c=${encodeURIComponent(cat)}`);
+      return data.meals || [];
+    }
+
+    async function lookupMeal(id){
+      const data = await fetchJSON(`${apiBase}/lookup.php?i=${id}`);
+      return data.meals && data.meals[0];
+    }
+    
+    // --- Location Helpers ---
+    async function fetchCityName(lat, lon) {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Reverse geocoding failed');
+        const data = await res.json();
+        const city = data.address.city || data.address.town || data.address.village;
+        if (city) {
+          cityInput.value = city;
+        } else {
+          alert("Could not determine city name from your location.");
+        }
+      } catch (err) {
+        console.error("Error fetching city name:", err);
+        alert("Error fetching city name.");
+      }
+    }
+
+    function handleLocationClick() {
+      if ('geolocation' in navigator) {
+        cityInput.placeholder = "Getting location...";
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            fetchCityName(latitude, longitude);
+          },
+          (error) => {
+            console.error("Error getting location:", error);
+            alert("Could not get your location. Please check browser permissions.");
+            cityInput.placeholder = "City (optional)";
+          }
+        );
+      } else {
+        alert('Geolocation is not supported by your browser.');
+      }
+    }
+    
+    function getIngredients(meal) {
+        const ingredients = [];
+        for (let i = 1; i <= 20; i++) {
+            const ing = meal[`strIngredient${i}`];
+            const measure = meal[`strMeasure${i}`];
+            if (ing) {
+                ingredients.push(`${ing} (${measure})`);
+            } else {
+                break;
+            }
+        }
+        return ingredients.slice(0, 4).join(', ') + (ingredients.length > 4 ? '...' : '');
+    }
+
+    // --- UI rendering ---
+    function makeCard(meal, city, areaLabel){
+      const node = cardT.content.cloneNode(true);
+      const card = node.querySelector('.card');
+      card.querySelector('.thumb').src = meal.strMealThumb;
+      card.querySelector('.thumb').alt = meal.strMeal;
+      card.querySelector('.title').textContent = meal.strMeal;
+      card.querySelector('.sub').textContent = meal.strCategory || areaLabel || '';
+
+      const rating = (Math.round((3 + (parseInt(meal.idMeal) % 20) / 20 * 2) * 10) / 10).toFixed(1);
+      card.querySelector('.rating').textContent = `★ ${rating}`;
+
+      const address = city ? `${city}, ${meal.strArea || 'Unknown'}` : `${Math.floor(Math.random()*300)+1} Main Street, ${meal.strArea || 'Unknown'}`;
+      card.querySelector('.addr').textContent = address;
+      
+      card.querySelector('.ingredients').textContent = "Ingredients: " + getIngredients(meal);
+
+      const mapBtn = card.querySelector('.btn-map');
+      const mapQuery = encodeURIComponent(`${meal.strMeal} ${address}`);
+      mapBtn.href = `http://googleusercontent.com/maps.google.com/7{mapQuery}`;
+
+      const favBtn = card.querySelector('.fav');
+      function refreshFav(){ favBtn.textContent = isFav(meal.idMeal) ? '♥' : '♡'; }
+      refreshFav();
+      favBtn.addEventListener('click', async ()=>{
+        const favs = getFavorites();
+        const exists = favs.find(m=>m.idMeal===meal.idMeal);
+        if(exists){
+          const next = favs.filter(m=>m.idMeal!==meal.idMeal);
+          saveFavorites(next);
+        } else {
+          favs.push(meal);
+          saveFavorites(favs);
+        }
+        refreshFav();
+        if(currentView==='favs') render();
+      });
+
+      const selectBtn = card.querySelector('.btn-select');
+      function refreshSelectBtn(){ 
+        if(isInCart(meal.idMeal)) {
+          selectBtn.textContent = 'Selected';
+          selectBtn.classList.add('selected');
+        } else {
+          selectBtn.textContent = 'Select';
+          selectBtn.classList.remove('selected');
+        }
+      }
+      refreshSelectBtn();
+
+      selectBtn.addEventListener('click', () => {
+        const cart = getCart();
+        const exists = cart.find(m=>m.idMeal===meal.idMeal);
+        if(exists){
+          const next = cart.filter(m=>m.idMeal!==meal.idMeal);
+          saveCart(next);
+        } else {
+          cart.push(meal);
+          saveCart(cart);
+        }
+        refreshSelectBtn();
+        if(currentView==='cart') render();
+      });
+
+      return card;
+    }
+
+    async function renderExplore(area, category, city){
+      resultsArea.innerHTML = '';
+      const loading = document.createElement('div');
+      loading.className='empty'; loading.textContent='Searching — please wait...';
+      resultsArea.appendChild(loading);
+
+      try{
+        if (!area) area = 'Indian'; 
+        
+        let byArea = area ? await filterByArea(area) : [];
+        let byCat = category ? await filterByCategory(category) : [];
+
+        let ids = new Map();
+        
+        if (area && category) {
+            const catIds = new Set(byCat.map(m => m.idMeal));
+            byArea.forEach(m => {
+                if (catIds.has(m.idMeal)) {
+                    ids.set(m.idMeal, m);
+                }
+            });
+        } else if (area) {
+            byArea.forEach(m=>ids.set(m.idMeal,m));
+        } else if (category) {
+            byCat.forEach(m=>ids.set(m.idMeal,m));
+        } else {
+            byArea.forEach(m=>ids.set(m.idMeal,m));
+        }
+
+        let list = Array.from(ids.values());
+
+        if(list.length===0){
+          resultsArea.innerHTML = '<div class="empty">No dishes found for those filters.</div>';
+          return;
+        }
+
+        list = list.slice(0, 30);
+        loading.textContent = `Found ${list.length} dishes, fetching full details...`;
+        
+        const mealPromises = list.map(m => lookupMeal(m.idMeal));
+        const detailedMeals = await Promise.all(mealPromises);
+
+        resultsArea.innerHTML = '';
+        const grid = document.createElement('div'); grid.className='grid';
+        resultsArea.appendChild(grid);
+
+        for(const meal of detailedMeals){
+            if (meal) {
+                const card = makeCard(meal, city, area || meal.strArea);
+                grid.appendChild(card);
+            }
+        }
+
+      } catch(err){
+        resultsArea.innerHTML = '<div class="empty">Network or API error. Check console for details.</div>';
+        console.error(err);
+      }
+    }
+
+    function renderFavorites(){
+      resultsArea.innerHTML='';
+      const favs = getFavorites();
+      if(!favs.length){
+        resultsArea.innerHTML = '<div class="empty">No favorites yet — add some from Explore.</div>';
+        return;
+      }
+      const grid = document.createElement('div'); grid.className='grid';
+      resultsArea.appendChild(grid);
+      for(const f of favs){
+        const card = makeCard(f, '', f.strCategory || f.strArea || '');
+        grid.appendChild(card);
+      }
+    }
+
+    function renderCart(){
+      resultsArea.innerHTML='';
+      const cart = getCart();
+      if(!cart.length){
+        resultsArea.innerHTML = '<div class="empty">No items selected. Add some from Explore.</div>';
+        return;
+      }
+      const grid = document.createElement('div'); grid.className='grid';
+      resultsArea.appendChild(grid);
+      for(const item of cart){
+        const card = makeCard(item, '', item.strCategory || item.strArea || '');
+        
+        card.querySelector('.btn-map').style.display = 'block';
+        
+        grid.appendChild(card);
+      }
+      
+      const checkoutBtn = document.createElement('button');
+      checkoutBtn.className = 'btn';
+      checkoutBtn.textContent = 'Proceed to Checkout';
+      checkoutBtn.style.cssText = 'display:block; width: 200px; margin: 20px auto; padding: 12px; font-size: 16px;';
+      resultsArea.appendChild(checkoutBtn);
+      
+      checkoutBtn.onclick = () => {
+          alert(`Checking out with ${cart.length} items! (This is a demo)`);
+          saveCart([]);
+          render();
+      };
+    }
+
+    // --- RENDER FUNCTION WITH IMAGE ---
+    function render(){
+      if(currentView==='explore'){
+        resultsArea.innerHTML = `
+          <div class="empty">
+            <img src="https://www.themealdb.com/images/media/meals/1529444830.jpg" alt="Biryani">
+            <div>Click "Search" to see Indian dishes, or filter by category.</div>
+          </div>
+        `;
+      } else if (currentView === 'favs') {
+        renderFavorites();
+      } else {
+        renderCart();
+      }
+    }
+    // --- END RENDER FUNCTION ---
+
+    // --- Init ---
+    (async function init(){
+      try{
+        const categories = await loadCategories();
+        
+        areaSelect.innerHTML = '<option value="Indian">Indian</option>';
+        
+        const filteredCategories = categories.filter(c => c.toLowerCase() !== 'beef');
+        categorySelect.innerHTML = '<option value="">All categories</option>' + filteredCategories.map(c=>`<option>${c}</option>`).join('');
+
+      }catch(e){
+        areaSelect.innerHTML = '<option value="Indian">Indian</option>';
+        categorySelect.innerHTML = '<option value="">Error loading</option>';
+        console.error(e);
+      }
+
+      searchBtn.addEventListener('click', async ()=>{
+        setActiveTab('explore');
+        const area = areaSelect.value;
+        const category = categorySelect.value;
+        const city = cityInput.value.trim();
+        await renderExplore(area, category, city);
+      });
+      
+      locationBtn.addEventListener('click', handleLocationClick);
+
+      const enterSearch = (e) => { if (e.key === 'Enter') searchBtn.click(); };
+      cityInput.addEventListener('keydown', enterSearch);
+      areaSelect.addEventListener('keydown', enterSearch);
+      categorySelect.addEventListener('keydown', enterSearch);
+
+      // initial render
+      render();
+    })();
+  </script>
+</body>
+</html>
